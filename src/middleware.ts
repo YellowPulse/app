@@ -2,6 +2,41 @@ import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { type NextRequest, NextResponse } from "next/server";
 
+const BLOCKED_BOT_PATTERNS = [
+	/curl\/\d/i,
+	/python-requests/i,
+	/scrapy/i,
+	/httpclient/i,
+	/java\/\d/i,
+	/go-http-client/i,
+	/wget/i,
+	/nikto/i,
+	/sqlmap/i,
+	/nmap/i,
+	/masscan/i,
+	/zgrab/i,
+	/gobuster/i,
+	/dirbuster/i,
+	/nuclei/i,
+];
+
+const ALLOWED_BOT_PATTERNS = [
+	/googlebot/i,
+	/bingbot/i,
+	/vercelbot/i,
+	/slurp/i,
+	/duckduckbot/i,
+	/twitterbot/i,
+	/facebookexternalhit/i,
+	/linkedinbot/i,
+];
+
+function isBlockedBot(userAgent: string): boolean {
+	if (!userAgent) return true;
+	if (ALLOWED_BOT_PATTERNS.some((p) => p.test(userAgent))) return false;
+	return BLOCKED_BOT_PATTERNS.some((p) => p.test(userAgent));
+}
+
 const ALLOWED_ORIGINS = [
 	"https://app.yellowpulse.cc",
 	"https://yellowpulse.cc",
@@ -38,6 +73,12 @@ export async function middleware(request: NextRequest) {
 
 	if (request.method === "OPTIONS") {
 		return new NextResponse(null, { status: 204, headers: response.headers });
+	}
+
+	// Bot detection (before rate limiting to save Redis calls)
+	const userAgent = request.headers.get("user-agent") ?? "";
+	if (isBlockedBot(userAgent)) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
 	// Rate limiting
